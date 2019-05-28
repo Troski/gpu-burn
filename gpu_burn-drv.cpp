@@ -540,7 +540,8 @@ void listenClients(std::vector<int> clientFd, std::vector<pid_t> clientPid, int 
     printf("\tGPU %d: %s\n", (int)i, clientFaulty.at(i) ? "FAULTY" : "OK");
 }
 
-template<class T> void launch(int runLength, bool useDoubles) {
+template<class T> void launch(int runLength, bool useDoubles, unsigned int nb_gpu)
+{
   system("nvidia-smi -L");
 
   // Initting A and B with random data
@@ -561,12 +562,15 @@ template<class T> void launch(int runLength, bool useDoubles) {
   std::vector<pid_t> clientPids;
   clientPipes.push_back(readMain);
 
+
   pid_t myPid = fork();
   if (!myPid) {
     // Child
     close(mainPipe[0]);
     int writeFd = mainPipe[1];
     int devCount = initCuda();
+    if (nb_gpu > 0)
+      devCount = nb_gpu;
     write(writeFd, &devCount, sizeof(int));
 
     startBurn<T>(0, writeFd, A, B, useDoubles);
@@ -617,22 +621,55 @@ template<class T> void launch(int runLength, bool useDoubles) {
 }
 
 int main(int argc, char **argv) {
-  int runLength = 10;
+  unsigned int runLength = 10;
+  unsigned int nb_gpu = 0;
   bool useDoubles = false;
   int thisParam = 0;
-  if (argc >= 2 && std::string(argv[1]) == "-d") {
+
+  for (unsigned int i = 1; i < argc; i++)
+  {
+    if (std::string(argv[i]) == "-d")
       useDoubles = true;
-      thisParam++;
+    else if (std::string(argv[i]) == "-t")
+         if (i + 1 < argc)
+         {
+           i++;
+           runLength = atoi(argv[i]);
+           if (runLength <= 0)
+           {
+             printf("Burn time not provided or equal to 0. Exiting...\n");
+              exit(2);
+           }
+         }
+         else
+         {
+           printf("Missing argumet to -t option..Exiting\n");
+           exit(3);
+         }
+    else if (std::string(argv[i]) == "-g")
+    {
+      if (i + 1 < argc)
+         {
+           i++;
+           nb_gpu = atoi(argv[i]);
+           if (runLength <= 0)
+           {
+             printf("gpu number not provided or equal to 0. Exiting...\n");
+              exit(2);
+           }
+         }
+         else
+         {
+           printf("Missing argumet to -g option..Exiting\n");
+           exit(3);
+         }
     }
-  if (argc-thisParam < 2)
-    printf("Run length not specified in the command line.  Burning for 10 secs\n");
-  else
-    runLength = atoi(argv[1+thisParam]);
+  }
 
   if (useDoubles)
-    launch<double>(runLength, useDoubles);
+    launch<double>(runLength, useDoubles, nb_gpu);
   else
-    launch<float>(runLength, useDoubles);
+    launch<float>(runLength, useDoubles, nb_gpu);
 
   return 0;
 }
